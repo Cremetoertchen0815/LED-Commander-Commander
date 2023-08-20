@@ -1,5 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
-using System.IO;
+﻿using System.IO;
 using System.Linq;
 
 namespace LED_Commander_Commander.RawData;
