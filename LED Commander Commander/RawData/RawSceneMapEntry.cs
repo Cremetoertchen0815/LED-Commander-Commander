@@ -1,14 +1,10 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.IO;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace LED_Commander_Commander.RawData;
-public struct SceneMapEntry
+public struct RawSceneMapEntry
 {
-    public FixtureChannels[] FixtureChannels { get; set; } //16 * 10 Bytes
+    public RawFixtureChannels[] FixtureChannels { get; set; } //16 * 10 Bytes
 
     public bool IsEmpty { get; set; }
 
@@ -18,18 +14,32 @@ public struct SceneMapEntry
 
     public byte[] FieldArea { get; set; }
 
-    public static SceneMapEntry ReadScene(BinaryReader br)
+    public static RawSceneMapEntry Empty
     {
-        var settings = new SceneMapEntry();
-        settings.FixtureChannels = new FixtureChannels[16];
+        get
+        {
+            var settings = new RawSceneMapEntry();
+            settings.FixtureChannels = new RawFixtureChannels[16];
+            settings.IsEmpty = true;
+            settings.FieldArea = new byte[] { 0, 0, 0, 0 };
+
+            return settings;
+        }
+    }
+
+    public static RawSceneMapEntry ReadScene(BinaryReader br)
+    {
+        var settings = new RawSceneMapEntry();
+        //Load fixture data
+        settings.FixtureChannels = new RawFixtureChannels[16];
         for (int j = 0; j < 16; j++) settings.FixtureChannels[j].ReadIn(br);
-        var fieldData = br.ReadBytes(24);
+
 
         //Load enabled channels(loaded in 4 Blocks of 5 Bytes each, every Block encodes enabled channels for 4 fixtures)
         for (int i = 0; i < 4; i++)
         {
             var blockData = new byte[8];
-            new Span<byte>(fieldData).Slice(5 * i, 5).CopyTo(blockData);
+            new Span<byte>(br.ReadBytes(5)).CopyTo(blockData);
             var blockInt = BitConverter.ToInt64(blockData);
 
             //For all 4 devices in this block
@@ -39,7 +49,12 @@ public struct SceneMapEntry
             }
         }
 
-        //Load integrity check
+        //The following block of data contains various information on the scene
+        //Some chunks could be deciphered, like the aux channels or the integrity bit that determines whether the scene exists
+        //But it may contain other important data, so the whole block is stored as field area
+        var fieldData = br.ReadBytes(4);
+
+        //Load integrity check;
         settings.IsEmpty = 0 == (fieldData[20] & 1);
 
         //Load Aux 1 & Aux 2

@@ -1,7 +1,7 @@
 ﻿using System.IO;
 
 namespace LED_Commander_Commander.RawData;
-public struct FixtureChannels
+public struct RawFixtureChannels
 {
     public byte Fun;
     public byte Red;

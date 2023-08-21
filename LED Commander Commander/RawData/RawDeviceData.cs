@@ -2,22 +2,25 @@
 using System.Linq;
 
 namespace LED_Commander_Commander.RawData;
-public struct DeviceSettings
+public struct RawDeviceData
 {
     public const int LEAD_OUT_LENGTH = 0x157C3;
     public const int CHANNEL_NAME_CHARS = 0x7;
-    public const int CHANNEL_COUNT = 0xC;
+    public const int CHANNEL_COUNT_WITH_AUX = 0xC;
+    public const int CHANNEL_COUNT_WITHOUT_AUX = 0xA;
     public const int SCENES_COUNT_REGULAR = 0x10;
     public const int SCENES_COUNT_CHASER = 0x7D0;
+    public const int FIXTURE_COUNT = 0x10;
     public const int DMX_CHANNELS = 0x200;
     public const int CHASER_COUNT = 0x10;
     public const int CHASER_STEPS = 0x7D0;
     public const int PADDING_SIZE = 0x200;
+    public const byte PATCH_VALUE_NOT_PATCHED = 0xA0;
     public const string IDENTIFIER_A = "acme\0";
 
     public string Header; //should be succeeded
-    public SceneMapEntry[] Scenes; //Maps to the 16 scenes
-    public SceneMapEntry[] ChaserSteps; //Contains slots for 2008 chaser steps in unspecified order
+    public RawSceneMapEntry[] Scenes; //Maps to the 16 scenes
+    public RawSceneMapEntry[] ChaserSteps; //Contains slots for 2008 chaser steps in unspecified order
     public string[] ChannelNames; //Describes the name of every channel(FUN, Red, Green, etc.)
     public byte[] PatchMap; //0x200 Bytes, Value correlated to patched channel = 0x0A * fixture + channel type
     public byte[] ChaserLength; //x16, 3 Bytes each, xx 00 05, just take first
@@ -26,21 +29,41 @@ public struct DeviceSettings
     public bool[] DimmerSet; //0x10 Byte bools
     public bool[][] DimmedChannels; //0x10 channels x16 bools, indicating which channels are dimmed and which are not
 
-    public static DeviceSettings LoadFromFile(string filename)
+    public static RawDeviceData Empty
+    {
+        get
+        {
+            var settings = new RawDeviceData();
+            settings.Header = "succeeded";
+            settings.Scenes = Enumerable.Range(0, SCENES_COUNT_REGULAR).Select(_ => RawSceneMapEntry.Empty).ToArray();
+            settings.ChaserSteps = Enumerable.Range(0, SCENES_COUNT_CHASER).Select(_ => RawSceneMapEntry.Empty).ToArray();
+            settings.PatchMap = Enumerable.Range(0, DMX_CHANNELS).Select(_ => PATCH_VALUE_NOT_PATCHED).ToArray();
+            settings.ChannelNames = new string[] { "FUN", "Red", "Green", "Blue", "Speed", "Color", "Strobe", "Dimmer", "PAN", "TILT", "AUX1", "AUX2" };
+            settings.ChaserLength = new byte[CHASER_COUNT];
+            settings.ChaserOrder = new ushort[CHASER_COUNT, CHASER_STEPS];
+            settings.TwoWeirdBytes = new byte[] { 0, 0 };
+            settings.DimmerSet = Enumerable.Range(0, FIXTURE_COUNT).Select(x => true).ToArray();
+            settings.DimmedChannels = new bool[FIXTURE_COUNT][];
+            for (int i = 0; i < FIXTURE_COUNT; i++) settings.DimmedChannels[i] = new bool[] { false, true, true, true, false, false, false, false, false, false };
+            return settings;
+        }
+    }
+
+    public static RawDeviceData LoadFromFile(string filename)
     {
         var fileStream = File.OpenRead(filename);
         var br = new BinaryReader(fileStream, System.Text.Encoding.ASCII);
         
-        var settings = new DeviceSettings();
+        var settings = new RawDeviceData();
         settings.Header = new string(br.ReadChars(PADDING_SIZE)).Replace("\0", string.Empty);
         //Read scenes and chaser steps
-        settings.Scenes = new SceneMapEntry[SCENES_COUNT_REGULAR];
-        for (int i = 0; i < SCENES_COUNT_REGULAR; i++) settings.Scenes[i] = SceneMapEntry.ReadScene(br);
-        settings.ChaserSteps = new SceneMapEntry[SCENES_COUNT_CHASER];
-        for (int i = 0; i < SCENES_COUNT_CHASER; i++) settings.ChaserSteps[i] = SceneMapEntry.ReadScene(br);
+        settings.Scenes = new RawSceneMapEntry[SCENES_COUNT_REGULAR];
+        for (int i = 0; i < SCENES_COUNT_REGULAR; i++) settings.Scenes[i] = RawSceneMapEntry.ReadScene(br);
+        settings.ChaserSteps = new RawSceneMapEntry[SCENES_COUNT_CHASER];
+        for (int i = 0; i < SCENES_COUNT_CHASER; i++) settings.ChaserSteps[i] = RawSceneMapEntry.ReadScene(br);
         //Read channel names and patching
-        settings.ChannelNames = new string[CHANNEL_COUNT];
-        for (int i = 0; i < CHANNEL_COUNT; i++) settings.ChannelNames[i] = new string(br.ReadChars(CHANNEL_NAME_CHARS)).Replace("\0", string.Empty);
+        settings.ChannelNames = new string[CHANNEL_COUNT_WITH_AUX];
+        for (int i = 0; i < CHANNEL_COUNT_WITH_AUX; i++) settings.ChannelNames[i] = new string(br.ReadChars(CHANNEL_NAME_CHARS)).Replace("\0", string.Empty);
         settings.PatchMap = br.ReadBytes(DMX_CHANNELS);
         //Read chaser lengths
         settings.ChaserLength = new byte[CHASER_COUNT];
@@ -83,7 +106,7 @@ public struct DeviceSettings
         //Write chaser scenes
         for (int i = 0; i < SCENES_COUNT_CHASER; i++) ChaserSteps[i].WriteScene(bw);
         //Write channel names
-        for (int i = 0; i < CHANNEL_COUNT; i++)
+        for (int i = 0; i < CHANNEL_COUNT_WITHOUT_AUX; i++)
         {
             bw.Write(ChannelNames[i].ToCharArray());
             bw.Write(Enumerable.Range(1, CHANNEL_NAME_CHARS - ChannelNames[i].Length).Select(_ => '\0').ToArray());
