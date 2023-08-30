@@ -9,5 +9,5 @@ public class FixtureSettings
 
     public bool IsDimmerActivated { get; set; }
     public ChannelType DimmedChannels { get; set; }
-    public List<ushort> GetAddressesPatchedToChannel(ChannelType channel) => _patchedAddresses[(int)channel];
+    public List<ushort> GetAddressesPatchedToChannel(int channel) => _patchedAddresses[channel];
 }

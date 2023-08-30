@@ -1,10 +1,12 @@
 ﻿using LED_Commander_Commander.RawData;
-using static System.Formats.Asn1.AsnWriter;
+using System.Collections.Generic;
 
 namespace LED_Commander_Commander.ManagedData;
 public class SaveFile
 {
     public string[] ChannelNames { get; init; } = new string[12];
+    public List<ushort> Aux1Addresses { get; init; } = new();
+    public List<ushort> Aux2Addresses { get; init; } = new();
     public FixtureSettings[] Fixtures { get; init; } = new FixtureSettings[16];
     public Scene?[] Scenes { get; init; } = new Scene?[16];
     public Chaser?[] Chasers { get; init; } = new Chaser?[16];
@@ -12,6 +14,7 @@ public class SaveFile
     public void LoadFromFile(string filename)
     {
         var rawData = RawDeviceData.LoadFromFile(filename);
+        rawData.SaveToFile("FILE0.PRO");
         //Transfer channel names
         rawData.ChannelNames.CopyTo(ChannelNames, 0);
         //Transfer dimmer settings
@@ -19,15 +22,31 @@ public class SaveFile
         {
             var fixture = new FixtureSettings();
             fixture.IsDimmerActivated = rawData.DimmerSet[f];
-            for (int i = 0; i < rawData.DimmedChannels[f].Length; i++) fixture.DimmedChannels |= rawData.DimmedChannels[f][i] ? (ChannelType)i : 0;
+            for (int i = 0; i < rawData.DimmedChannels[f].Length; i++) fixture.DimmedChannels |= rawData.DimmedChannels[f][i] ? (ChannelType)(1 << i) : 0;
             Fixtures[f] = fixture;
         }
         //Transfer patch map
         for (int i = 0; i < rawData.PatchMap.Length; i++)
         {
             var value = rawData.PatchMap[i];
-            if (value > 159) continue;
-            Fixtures[value / 10].GetAddressesPatchedToChannel((ChannelType)(value % 10)).Add((ushort)i);
+            //Check for special values
+            if (value >= RawDeviceData.PATCH_VALUE_AUX1)
+            {
+                switch (value)
+                {
+                    case RawDeviceData.PATCH_VALUE_AUX1:
+                        Aux1Addresses.Add((ushort)(i + 1));
+                        break;
+                    case RawDeviceData.PATCH_VALUE_AUX2:
+                        Aux2Addresses.Add((ushort)(i + 1));
+                        break;
+                    default:  // >=162 = NOT ASSIGNED
+                        break;
+                }
+
+                continue;
+            }
+            Fixtures[value / 10].GetAddressesPatchedToChannel(value % 10).Add((ushort)(i + 1));
         }
         //Transfer scenes
         for (int s = 0; s < 16; s++)
@@ -88,12 +107,15 @@ public class SaveFile
             var fixture = Fixtures[f];
             rawData.DimmerSet[f] = fixture.IsDimmerActivated;
             rawData.DimmedChannels[f] = new bool[10];
-            for (int i = 0; i < 10; i++) rawData.DimmedChannels[f][i] = fixture.DimmedChannels.HasFlag((ChannelType)i);
+            for (int i = 0; i < 10; i++) rawData.DimmedChannels[f][i] = fixture.DimmedChannels.HasFlag((ChannelType)(1 << i));
 
-            for (int ch = 0; ch < RawDeviceData.CHANNEL_COUNT_WITH_AUX; ch++)
+            for (int i = 0; i < Aux1Addresses.Count; i++) rawData.PatchMap[Aux1Addresses[i] - 1] = RawDeviceData.PATCH_VALUE_AUX1;
+            for (int i = 0; i < Aux2Addresses.Count; i++) rawData.PatchMap[Aux2Addresses[i] - 1] = RawDeviceData.PATCH_VALUE_AUX2;
+
+            for (int ch = 0; ch < RawDeviceData.CHANNEL_COUNT_WITHOUT_AUX; ch++)
             {
-                var patchData = fixture.GetAddressesPatchedToChannel((ChannelType)ch);
-                for (int i = 0; i < patchData.Count; i++) rawData.PatchMap[patchData[i]] = (byte)(f * RawDeviceData.CHANNEL_COUNT_WITHOUT_AUX + ch);
+                var patchData = fixture.GetAddressesPatchedToChannel(ch);
+                for (int i = 0; i < patchData.Count; i++) rawData.PatchMap[patchData[i] - 1] = (byte)(f * RawDeviceData.CHANNEL_COUNT_WITHOUT_AUX + ch);
             }
         }
 
@@ -134,5 +156,7 @@ public class SaveFile
                 rawData.ChaserOrder[s, st] = (ushort)totalStepIdx++;
             }
         }
+
+        rawData.SaveToFile(filename);
     }
 }

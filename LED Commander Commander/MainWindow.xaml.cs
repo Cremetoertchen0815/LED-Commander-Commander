@@ -19,6 +19,7 @@ public partial class MainWindow : Window
     private void button_Click(object sender, RoutedEventArgs e)
     {
         var data = new SaveFile();
-        data.LoadFromFile("FILE9.PRO");
+        data.LoadFromFile("FILE2.PRO");
+        data.SaveToFile("FILE3.PRO");
     }
 }
