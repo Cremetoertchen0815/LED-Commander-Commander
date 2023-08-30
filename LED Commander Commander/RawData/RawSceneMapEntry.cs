@@ -55,11 +55,11 @@ public struct RawSceneMapEntry
         var fieldData = br.ReadBytes(4);
 
         //Load integrity check;
-        settings.IsEmpty = 0 == (fieldData[20] & 1);
+        settings.IsEmpty = 0 == (fieldData[0] & 1);
 
         //Load Aux 1 & Aux 2
-        settings.Aux1 = (fieldData[21] & 1) == 1;
-        settings.Aux2 = (fieldData[21] & 2) == 2;
+        settings.Aux1 = (fieldData[1] & 1) == 1;
+        settings.Aux2 = (fieldData[1] & 2) == 2;
 
         //Store rest of data
         settings.FieldArea = fieldData;
@@ -92,7 +92,7 @@ public struct RawSceneMapEntry
         bw.Write((byte)((Aux1 || Aux2 ? 16 : 0) | (Aux1 ? 1 : 0) | (Aux2 ? 2 : 0)));
 
         //Write weird byte
-        bw.Write(FieldArea[22]);
+        bw.Write(FieldArea[2]);
 
         //Write trailing 0
         bw.Write((byte)0);

@@ -15,7 +15,9 @@ public struct RawDeviceData
     public const int CHASER_COUNT = 0x10;
     public const int CHASER_STEPS = 0x7D0;
     public const int PADDING_SIZE = 0x200;
-    public const byte PATCH_VALUE_NOT_PATCHED = 0xA0;
+    public const byte PATCH_VALUE_AUX1 = 0xA0;
+    public const byte PATCH_VALUE_AUX2 = 0xA1;
+    public const byte PATCH_VALUE_NOT_PATCHED = 0xA2;
     public const string IDENTIFIER_A = "acme\0";
 
     public string Header; //should be succeeded
@@ -25,7 +27,7 @@ public struct RawDeviceData
     public byte[] PatchMap; //0x200 Bytes, Value correlated to patched channel = 0x0A * fixture + channel type
     public byte[] ChaserLength; //x16, 3 Bytes each, xx 00 05, just take first
     public ushort[,] ChaserOrder; //x16 - 2000 UShort steps, describes index of chaser steps
-    public byte[] TwoWeirdBytes; //Two bytes I don't know what it does
+    public byte[] FourWeirdBytes; //Four bytes I don't know what it does
     public bool[] DimmerSet; //0x10 Byte bools
     public bool[][] DimmedChannels; //0x10 channels x16 bools, indicating which channels are dimmed and which are not
 
@@ -41,7 +43,7 @@ public struct RawDeviceData
             settings.ChannelNames = new string[] { "FUN", "Red", "Green", "Blue", "Speed", "Color", "Strobe", "Dimmer", "PAN", "TILT", "AUX1", "AUX2" };
             settings.ChaserLength = new byte[CHASER_COUNT];
             settings.ChaserOrder = new ushort[CHASER_COUNT, CHASER_STEPS];
-            settings.TwoWeirdBytes = new byte[] { 0, 0 };
+            settings.FourWeirdBytes = new byte[] { 0x4B, 0x01, 0x64, 0x64 };
             settings.DimmerSet = Enumerable.Range(0, FIXTURE_COUNT).Select(x => true).ToArray();
             settings.DimmedChannels = new bool[FIXTURE_COUNT][];
             for (int i = 0; i < FIXTURE_COUNT; i++) settings.DimmedChannels[i] = new bool[] { false, true, true, true, false, false, false, false, false, false };
@@ -63,7 +65,12 @@ public struct RawDeviceData
         for (int i = 0; i < SCENES_COUNT_CHASER; i++) settings.ChaserSteps[i] = RawSceneMapEntry.ReadScene(br);
         //Read channel names and patching
         settings.ChannelNames = new string[CHANNEL_COUNT_WITH_AUX];
-        for (int i = 0; i < CHANNEL_COUNT_WITH_AUX; i++) settings.ChannelNames[i] = new string(br.ReadChars(CHANNEL_NAME_CHARS)).Replace("\0", string.Empty);
+        for (int i = 0; i < CHANNEL_COUNT_WITH_AUX; i++)
+        {
+            var rawStr = new string(br.ReadChars(CHANNEL_NAME_CHARS));
+            var zeroIdx = rawStr.IndexOf('\0');
+            settings.ChannelNames[i] = zeroIdx < 0 ? rawStr : rawStr.Substring(0, zeroIdx);
+        }
         settings.PatchMap = br.ReadBytes(DMX_CHANNELS);
         //Read chaser lengths
         settings.ChaserLength = new byte[CHASER_COUNT];
@@ -77,16 +84,20 @@ public struct RawDeviceData
         {
             for (int j = 0; j < CHASER_STEPS; j++) settings.ChaserOrder[i,j] = br.ReadUInt16();
         }
-        //Read weird constant
-        if (br.ReadChar() != 'K' | br.ReadChar() != (char)1) throw new System.Exception("Wrong version???"); //Read string (maybe versioning???)
-        //Read two weird bytes
-        settings.TwoWeirdBytes = br.ReadBytes(2);
+        //Read four weird bytes
+        settings.FourWeirdBytes = br.ReadBytes(4);
+        //TODO: Analyse four weird bytes and what they might do
+
         //Read dimmer settings
         settings.DimmerSet = br.ReadBytes(0x10).Select(x => x > 0).ToArray();
         settings.DimmedChannels = new bool[16][];
         for (int i = 0; i < 16; i++) settings.DimmedChannels[i] = br.ReadBytes(10).Select(x => x > 0).ToArray();
         //Read file and check for file end
         br.ReadBytes(LEAD_OUT_LENGTH); //Read lead out trail of "0xFF"
+        //TODO: Lead out may contain 500 Byte-big segments of "0x00".
+        //I have absolutely no clue why, but it might be significant,
+        //as these blocks are always exactly 500 Bytes in size.
+
         if (br.PeekChar() >= 0) throw new System.Exception("File not at end!");
         return settings;
     }
@@ -106,7 +117,7 @@ public struct RawDeviceData
         //Write chaser scenes
         for (int i = 0; i < SCENES_COUNT_CHASER; i++) ChaserSteps[i].WriteScene(bw);
         //Write channel names
-        for (int i = 0; i < CHANNEL_COUNT_WITHOUT_AUX; i++)
+        for (int i = 0; i < CHANNEL_COUNT_WITH_AUX; i++)
         {
             bw.Write(ChannelNames[i].ToCharArray());
             bw.Write(Enumerable.Range(1, CHANNEL_NAME_CHARS - ChannelNames[i].Length).Select(_ => '\0').ToArray());
@@ -125,7 +136,7 @@ public struct RawDeviceData
             for (int j = 0; j < CHASER_STEPS; j++) bw.Write(ChaserOrder[i, j]);
         }
         bw.Write(new char[] { 'K', (char)1 });
-        bw.Write(TwoWeirdBytes);
+        bw.Write(FourWeirdBytes);
         //Write dimmer settings
         for (int i = 0; i < CHASER_COUNT; i++) bw.Write((byte)(DimmerSet[i] ? 1 : 0));
         //Write random padding
